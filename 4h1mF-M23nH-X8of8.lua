@@ -15,6 +15,7 @@ local Window = MacLib:Window({
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 
@@ -36,7 +37,8 @@ local config = {
         FOV = {
             Enabled = false,
             Value = 100,
-            Circle = nil
+            Circle = nil,
+            Mode = "Screen"
         },
         Part = "Head",
         Method = "Camera",
@@ -44,10 +46,8 @@ local config = {
         LockedOnto = nil,
         Checks = {
             Team = false,
-            Health = true,
-            Knock = true,
-            Invisible = true,
-            Wall = true
+            Health = false,
+            Wall = false
         },
         Humanization = {
             Jitter = {
@@ -74,9 +74,7 @@ local config = {
         },
         Checks = {
             Team = false,
-            Health = true,
-            Knock = true,
-            Invisible = true
+            Health = false
         }
     },
     Player = {
@@ -102,14 +100,21 @@ local config = {
 }
 
 -- Create watermark
-local watermark = Drawing.new("Text")
-watermark.Text = "[ ⛅ SOLSTICE ]"
-watermark.Size = 18
-watermark.Outline = true
-watermark.OutlineColor = Color3.new(0, 0, 0)
-watermark.Color = Color3.fromRGB(255, 165, 0) -- Orange
-watermark.Position = Vector2.new(Camera.ViewportSize.X/2 - watermark.TextBounds.X/2, 10)
-watermark.Visible = config.Settings.Watermark
+local watermark1 = Drawing.new("Text")
+watermark1.Text = "[ ⛅ SOLSTICE ]"
+watermark1.Size = 18
+watermark1.Outline = true
+watermark1.OutlineColor = Color3.new(0, 0, 0)
+watermark1.Color = Color3.fromRGB(59, 130, 246) -- #3b82f6
+watermark1.Visible = config.Settings.Watermark
+
+local watermark2 = Drawing.new("Text")
+watermark2.Text = "[ ⛅ SOLSTICE ]"
+watermark2.Size = 18
+watermark2.Outline = true
+watermark2.OutlineColor = Color3.new(0, 0, 0)
+watermark2.Color = Color3.fromRGB(139, 92, 246) -- #8b5cf6
+watermark2.Visible = config.Settings.Watermark
 
 -- Create FOV circle if enabled
 if config.Aimbot.FOV.Enabled then
@@ -150,14 +155,6 @@ local function isValidTarget(player)
         return false
     end
     
-    if config.Aimbot.Checks.Knock and player.Character:FindFirstChild("KO") then
-        return false
-    end
-    
-    if config.Aimbot.Checks.Invisible and player.Character:FindFirstChild("Invisible") then
-        return false
-    end
-    
     -- Wall check
     if config.Aimbot.Checks.Wall then
         local character = LocalPlayer.Character
@@ -194,14 +191,6 @@ local function isValidVisualTarget(player)
     if not humanoid then return false end
     
     if config.Visuals.Checks.Health and humanoid.Health <= 0 then
-        return false
-    end
-    
-    if config.Visuals.Checks.Knock and player.Character:FindFirstChild("KO") then
-        return false
-    end
-    
-    if config.Visuals.Checks.Invisible and player.Character:FindFirstChild("Invisible") then
         return false
     end
     
@@ -350,21 +339,29 @@ local function getClosestPlayer()
     local shortestDistance = math.huge
     local mousePosition = UserInputService:GetMouseLocation()
     
+    local fovCenter
+    if config.Aimbot.FOV.Mode == "Screen" then
+        fovCenter = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+    else -- Mouse
+        fovCenter = mousePosition
+    end
+
     for _, player in pairs(Players:GetPlayers()) do
         if isValidTarget(player) and player.Character and player.Character:FindFirstChild(config.Aimbot.Part) then
             local part = player.Character:FindFirstChild(config.Aimbot.Part)
             local screenPoint, onScreen = Camera:WorldToViewportPoint(part.Position)
             
             if onScreen then
-                local distance = (Vector2.new(screenPoint.X, screenPoint.Y) - Vector2.new(mousePosition.X, mousePosition.Y)).Magnitude
+                local fovDistance = (Vector2.new(screenPoint.X, screenPoint.Y) - fovCenter).Magnitude
                 
                 -- FOV check
-                if config.Aimbot.FOV.Enabled and distance > config.Aimbot.FOV.Value then
+                if config.Aimbot.FOV.Enabled and fovDistance > config.Aimbot.FOV.Value then
                     continue
                 end
-                
-                if distance < shortestDistance then
-                    shortestDistance = distance
+
+                local mouseDistance = (Vector2.new(screenPoint.X, screenPoint.Y) - mousePosition).Magnitude
+                if mouseDistance < shortestDistance then
+                    shortestDistance = mouseDistance
                     closestPlayer = player
                 end
             end
@@ -462,12 +459,22 @@ end
 
 local function updateVisuals()
     -- Update watermark position in case screen size changes
-    watermark.Position = Vector2.new(Camera.ViewportSize.X/2 - watermark.TextBounds.X/2, 10)
-    watermark.Visible = config.Settings.Watermark
+    if watermark1 and watermark2 then
+        local textBounds = watermark1.TextBounds
+        local position = Vector2.new(Camera.ViewportSize.X / 2 - textBounds.X / 2, 10)
+        watermark1.Position = position
+        watermark2.Position = position + Vector2.new(1, 1)
+        watermark1.Visible = config.Settings.Watermark
+        watermark2.Visible = config.Settings.Watermark
+    end
     
     -- Update FOV circle if enabled
     if config.Aimbot.FOV.Enabled and config.Aimbot.FOV.Circle then
-        config.Aimbot.FOV.Circle.Position = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
+        if config.Aimbot.FOV.Mode == "Screen" then
+            config.Aimbot.FOV.Circle.Position = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
+        else -- Mouse
+            config.Aimbot.FOV.Circle.Position = UserInputService:GetMouseLocation()
+        end
         config.Aimbot.FOV.Circle.Radius = config.Aimbot.FOV.Value
     end
 
@@ -712,6 +719,80 @@ local function toggleAutoStrafe(state)
 end
 
 -- UI Setup
+local components = {
+    Aimbot = {
+        Enabled = nil,
+        Keybind = nil,
+        Sticky = nil,
+        FOV = {
+            Enabled = nil,
+            Value = nil,
+            Mode = nil
+        },
+        Smoothness = {
+            Enabled = nil,
+            Value = nil
+        },
+        Prediction = {
+            Enabled = nil,
+            X = nil,
+            Y = nil
+        },
+        Part = nil,
+        Method = nil,
+        Checks = {
+            Team = nil,
+            Health = nil,
+            Wall = nil
+        },
+        Humanization = {
+            Jitter = {
+                Enabled = nil,
+                Intensity = nil,
+                Speed = nil,
+                RandomFactor = nil
+            },
+            AimCurve = {
+                Enabled = nil,
+                Curve = nil,
+                Randomness = nil
+            }
+        }
+    },
+    Visuals = {
+        Names = {
+            Enabled = nil,
+            Type = nil,
+            Color = nil,
+            Size = nil
+        },
+        Checks = {
+            Team = nil,
+            Health = nil
+        }
+    },
+    Player = {
+        Walkspeed = {
+            Enabled = nil,
+            Loop = nil,
+            Value = nil
+        },
+        Jump = {
+            Enabled = nil,
+            Power = nil,
+            NoCooldown = nil
+        },
+        AutoStrafe = {
+            Enabled = nil,
+            Speed = nil,
+            Style = nil
+        }
+    },
+    Settings = {
+        Watermark = nil
+    }
+}
+
 local globalSettings = {
     UIBlurToggle = Window:GlobalSetting({
         Name = "UI Blur",
@@ -790,16 +871,158 @@ local sections = {
     plr_jump = tabs.Player:Section({ Side = "Right" }),
     plr_strafe = tabs.Player:Section({ Side = "Left" }),
     
-    sols = tabs.Settings:Section({ Side = "Right" }),
+    sols_settings = tabs.Settings:Section({ Side = "Right" }),
+    config_manager = tabs.Settings:Section({ Side = "Left" })
 }
 
+-- Config Functions
+local configName = "Default"
+local selectedConfig = "Default"
+
+local function deepMerge(target, source)
+    for k, v in pairs(source) do
+        if type(v) == "table" and type(target[k] or false) == "table" then
+            deepMerge(target[k], v)
+        else
+            target[k] = v
+        end
+    end
+    return target
+end
+
+local function updateUIFromConfig()
+    -- Note: Setting Keybinds and Colorpickers programmatically is not straightforward
+    -- as it requires converting from JSON-safe formats back to Roblox-specific types.
+    -- This functionality is not implemented in this version.
+
+    -- Aimbot
+    pcall(function() components.Aimbot.Enabled:SetValue(config.Aimbot.Enabled) end)
+    pcall(function() components.Aimbot.Sticky:SetValue(config.Aimbot.Sticky) end)
+    pcall(function() components.Aimbot.FOV.Enabled:SetValue(config.Aimbot.FOV.Enabled) end)
+    pcall(function() components.Aimbot.FOV.Value:SetValue(config.Aimbot.FOV.Value) end)
+    pcall(function() components.Aimbot.FOV.Mode:UpdateSelection(config.Aimbot.FOV.Mode) end)
+    pcall(function() components.Aimbot.Smoothness.Enabled:SetValue(config.Aimbot.Smoothness.Enabled) end)
+    pcall(function() components.Aimbot.Smoothness.Value:SetValue(config.Aimbot.Smoothness.Value) end)
+    pcall(function() components.Aimbot.Prediction.Enabled:SetValue(config.Aimbot.Prediction.Enabled) end)
+    pcall(function() components.Aimbot.Prediction.X:SetValue(config.Aimbot.Prediction.X) end)
+    pcall(function() components.Aimbot.Prediction.Y:SetValue(config.Aimbot.Prediction.Y) end)
+    pcall(function() components.Aimbot.Part:UpdateSelection(config.Aimbot.Part) end)
+    pcall(function() components.Aimbot.Method:UpdateSelection(config.Aimbot.Method) end)
+    
+    -- Aimbot Checks
+    pcall(function() components.Aimbot.Checks.Team:SetValue(config.Aimbot.Checks.Team) end)
+    pcall(function() components.Aimbot.Checks.Health:SetValue(config.Aimbot.Checks.Health) end)
+    pcall(function() components.Aimbot.Checks.Wall:SetValue(config.Aimbot.Checks.Wall) end)
+
+    -- Humanization
+    pcall(function() components.Aimbot.Humanization.Jitter.Enabled:SetValue(config.Aimbot.Humanization.Jitter.Enabled) end)
+    pcall(function() components.Aimbot.Humanization.Jitter.Intensity:SetValue(config.Aimbot.Humanization.Jitter.Intensity) end)
+    pcall(function() components.Aimbot.Humanization.Jitter.Speed:SetValue(config.Aimbot.Humanization.Jitter.Speed) end)
+    pcall(function() components.Aimbot.Humanization.Jitter.RandomFactor:SetValue(config.Aimbot.Humanization.Jitter.RandomFactor) end)
+    pcall(function() components.Aimbot.Humanization.AimCurve.Enabled:SetValue(config.Aimbot.Humanization.AimCurve.Enabled) end)
+    pcall(function() components.Aimbot.Humanization.AimCurve.Curve:SetValue(config.Aimbot.Humanization.AimCurve.Curve) end)
+    pcall(function() components.Aimbot.Humanization.AimCurve.Randomness:SetValue(config.Aimbot.Humanization.AimCurve.Randomness) end)
+
+    -- Visuals
+    pcall(function() components.Visuals.Names.Enabled:SetValue(config.Visuals.Names.Enabled) end)
+    pcall(function() components.Visuals.Names.Type:UpdateSelection(config.Visuals.Names.Type) end)
+    pcall(function() components.Visuals.Names.Size:SetValue(config.Visuals.Names.Size) end)
+    
+    -- Visuals Checks
+    pcall(function() components.Visuals.Checks.Team:SetValue(config.Visuals.Checks.Team) end)
+    pcall(function() components.Visuals.Checks.Health:SetValue(config.Visuals.Checks.Health) end)
+    
+    -- Player
+    pcall(function() components.Player.Walkspeed.Enabled:SetValue(config.Player.Walkspeed.Enabled) end)
+    pcall(function() components.Player.Walkspeed.Loop:SetValue(config.Player.Walkspeed.Loop) end)
+    pcall(function() components.Player.Walkspeed.Value:SetValue(config.Player.Walkspeed.Value) end)
+    pcall(function() components.Player.Jump.Enabled:SetValue(config.Player.Jump.Enabled) end)
+    pcall(function() components.Player.Jump.Power:SetValue(config.Player.Jump.Power) end)
+    pcall(function() components.Player.Jump.NoCooldown:SetValue(config.Player.Jump.NoCooldown) end)
+    pcall(function() components.Player.AutoStrafe.Enabled:SetValue(config.Player.AutoStrafe.Enabled) end)
+    pcall(function() components.Player.AutoStrafe.Speed:SetValue(config.Player.AutoStrafe.Speed) end)
+    pcall(function() components.Player.AutoStrafe.Style:UpdateSelection(config.Player.AutoStrafe.Style) end)
+end
+
+local function applyConfig(loadedConfig)
+    deepMerge(config, loadedConfig)
+    updateUIFromConfig()
+    Window:Notify({ Title = "Arcana", Description = "Successfully loaded config: " .. selectedConfig, Lifetime = 5 })
+end
+
+local function saveConfig()
+    if not isfolder("starlight") then
+        makefolder("starlight")
+    end
+    if not isfolder("starlight/configs") then
+        makefolder("starlight/configs")
+    end
+
+    local file = "starlight/configs/" .. configName .. ".json"
+    
+    if isfile(file) then
+        Window:Confirm({
+            Title = "Overwrite Confirmation",
+            Description = "A config with this name already exists. Are you sure you want to overwrite it?",
+            Buttons = {
+                {
+                    Name = "Yes",
+                    Callback = function()
+                        writefile(file, HttpService:JSONEncode(config))
+                        Window:Notify({ Title = "Arcana", Description = "Successfully saved config: " .. configName, Lifetime = 5 })
+                        updateConfigDropdown()
+                    end
+                },
+                { Name = "No" }
+            }
+        })
+    else
+        writefile(file, HttpService:JSONEncode(config))
+        Window:Notify({ Title = "Arcana", Description = "Successfully saved config: " .. configName, Lifetime = 5 })
+        updateConfigDropdown()
+    end
+end
+
+local function loadConfig()
+    local file = "starlight/configs/" .. selectedConfig .. ".json"
+    if isfile(file) then
+        local success, result = pcall(function()
+            return HttpService:JSONDecode(readfile(file))
+        end)
+        
+        if success and result then
+            applyConfig(result)
+        else
+            Window:Notify({ Title = "Arcana", Description = "Failed to load config: " .. selectedConfig, Lifetime = 5 })
+        end
+    else
+        Window:Notify({ Title = "Arcana", Description = "Config not found: " .. selectedConfig, Lifetime = 5 })
+    end
+end
+
+function updateConfigDropdown()
+    local configs = {}
+    if isfolder("starlight/configs") then
+        for _, file in ipairs(list_files("starlight/configs")) do
+            if file:match(".json$") then
+                table.insert(configs, file:gsub(".json", ""))
+            end
+        end
+    end
+    components.Settings.ConfigDropdown:UpdateOptions(configs)
+end
+
+
 -- Settings Section
-sections.sols:Toggle({
+sections.sols_settings:Toggle({
     Name = "Show Watermark",
     Default = true,
     Callback = function(value)
         config.Settings.Watermark = value
-        watermark.Visible = value
+        if watermark1 and watermark2 then
+            watermark1.Visible = value
+            watermark2.Visible = value
+        end
         Window:Notify({
             Title = Window.Settings.Title,
             Description = (value and "Enabled " or "Disabled ") .. "Watermark"
@@ -807,12 +1030,46 @@ sections.sols:Toggle({
     end,
 }, "Toggle")
 
+-- Config Manager Section
+sections.config_manager:Header({ Name = "📚 | Configuations" })
+sections.config_manager:Divider()
+
+components.Settings.ConfigNameBox = sections.config_manager:Input({
+    Name = "Config Name",
+    Placeholder = "Enter config name...",
+    Default = configName,
+    Callback = function(value)
+        configName = value
+    end
+}, "Input")
+
+sections.config_manager:Button({
+    Name = "Save as Config",
+    Callback = saveConfig
+})
+
+sections.config_manager:Divider()
+
+components.Settings.ConfigDropdown = sections.config_manager:Dropdown({
+    Name = "Configs",
+    Options = {},
+    Default = 1,
+    Callback = function(value)
+        selectedConfig = value
+    end
+})
+
+sections.config_manager:Button({
+    Name = "Load Config",
+    Callback = loadConfig
+})
+
 -- General Aimbot Section
 sections.aim_general:Header({
     Name = "🔒 | General"
 })
 sections.aim_general:Divider()
-sections.aim_general:Toggle({
+components.Aimbot.Enabled = sections.aim_general:Toggle({
     Name = "Enable Aimbot",
     Default = false,
     Callback = function(value)
@@ -824,7 +1081,7 @@ sections.aim_general:Toggle({
         })
     end,
 }, "Toggle")
-sections.aim_general:Keybind({
+components.Aimbot.Keybind = sections.aim_general:Keybind({
     Name = "Aimbot Key",
     Blacklist = false,
     onBinded = function(bind)
@@ -836,7 +1093,7 @@ sections.aim_general:Keybind({
         })
     end,
 }, "Keybind")
-sections.aim_general:Toggle({
+components.Aimbot.Sticky = sections.aim_general:Toggle({
     Name = "Sticky Aim",
     Default = false,
     Callback = function(value)
@@ -851,7 +1108,7 @@ sections.aim_general:Toggle({
     end,
 }, "Toggle")
 sections.aim_general:Divider()
-sections.aim_general:Toggle({
+components.Aimbot.FOV.Enabled = sections.aim_general:Toggle({
     Name = "Enable FOV",
     Default = false,
     Callback = function(value)
@@ -875,7 +1132,7 @@ sections.aim_general:Toggle({
         })
     end,
 }, "Toggle")
-sections.aim_general:Slider({
+components.Aimbot.FOV.Value = sections.aim_general:Slider({
     Name = "FOV Size",
     Default = 100,
     Minimum = 25,
@@ -890,7 +1147,7 @@ sections.aim_general:Slider({
     end
 }, "Slider")
 sections.aim_general:Divider()
-sections.aim_general:Toggle({
+components.Aimbot.Smoothness.Enabled = sections.aim_general:Toggle({
     Name = "Enable Smoothness",
     Default = false,
     Callback = function(value)
@@ -901,7 +1158,7 @@ sections.aim_general:Toggle({
         })
     end,
 }, "Toggle")
-sections.aim_general:Slider({
+components.Aimbot.Smoothness.Value = sections.aim_general:Slider({
     Name = "Smoothness",
     Default = 10,
     Minimum = 1,
@@ -913,7 +1170,7 @@ sections.aim_general:Slider({
     end
 }, "Slider")
 sections.aim_general:Divider()
-sections.aim_general:Toggle({
+components.Aimbot.Prediction.Enabled = sections.aim_general:Toggle({
     Name = "Enable Prediction",
     Default = false,
     Callback = function(value)
@@ -924,7 +1181,7 @@ sections.aim_general:Toggle({
         })
     end,
 }, "Toggle")
-sections.aim_general:Slider({
+components.Aimbot.Prediction.X = sections.aim_general:Slider({
     Name = "Prediction X",
     Default = 0.1,
     Minimum = 0.01,
@@ -935,7 +1192,7 @@ sections.aim_general:Slider({
         config.Aimbot.Prediction.X = Value
     end
 }, "Slider")
-sections.aim_general:Slider({
+components.Aimbot.Prediction.Y = sections.aim_general:Slider({
     Name = "Prediction Y",
     Default = 0.1,
     Minimum = 0.01,
@@ -952,7 +1209,7 @@ sections.aim_hum:Header({
     Name = "🧍‍♂️ | Humanization"
 })
 sections.aim_hum:Divider()
-sections.aim_hum:Toggle({
+components.Aimbot.Humanization.Jitter.Enabled = sections.aim_hum:Toggle({
     Name = "Enable Jitter",
     Default = false,
     Callback = function(value)
@@ -963,7 +1220,7 @@ sections.aim_hum:Toggle({
         })
     end,
 }, "Toggle")
-sections.aim_hum:Slider({
+components.Aimbot.Humanization.Jitter.Intensity = sections.aim_hum:Slider({
     Name = "Jitter Intensity",
     Default = 5,
     Minimum = 1,
@@ -974,7 +1231,7 @@ sections.aim_hum:Slider({
         config.Aimbot.Humanization.Jitter.Intensity = Value
     end
 }, "Slider")
-sections.aim_hum:Slider({
+components.Aimbot.Humanization.Jitter.Speed = sections.aim_hum:Slider({
     Name = "Jitter Speed",
     Default = 2,
     Minimum = 0.5,
@@ -985,7 +1242,7 @@ sections.aim_hum:Slider({
         config.Aimbot.Humanization.Jitter.Speed = Value
     end
 }, "Slider")
-sections.aim_hum:Slider({
+components.Aimbot.Humanization.Jitter.RandomFactor = sections.aim_hum:Slider({
     Name = "Random Factor",
     Default = 1,
     Minimum = 0,
@@ -997,7 +1254,7 @@ sections.aim_hum:Slider({
     end
 }, "Slider")
 sections.aim_hum:Divider()
-sections.aim_hum:Toggle({
+components.Aimbot.Humanization.AimCurve.Enabled = sections.aim_hum:Toggle({
     Name = "Enable Aim Curve",
     Default = false,
     Callback = function(value)
@@ -1008,7 +1265,7 @@ sections.aim_hum:Toggle({
         })
     end,
 }, "Toggle")
-sections.aim_hum:Slider({
+components.Aimbot.Humanization.AimCurve.Curve = sections.aim_hum:Slider({
     Name = "Curve Intensity",
     Default = 0.5,
     Minimum = 0.1,
@@ -1019,7 +1276,7 @@ sections.aim_hum:Slider({
         config.Aimbot.Humanization.AimCurve.Curve = Value
     end
 }, "Slider")
-sections.aim_hum:Slider({
+components.Aimbot.Humanization.AimCurve.Randomness = sections.aim_hum:Slider({
     Name = "Curve Randomness",
     Default = 0.3,
     Minimum = 0,
@@ -1048,7 +1305,7 @@ local a_meth = {
     "Mouse",
     "Camera"
 }
-sections.aim_methods:Dropdown({
+components.Aimbot.Part = sections.aim_methods:Dropdown({
     Name = "Aim Part",
     Multi = false,
     Required = true,
@@ -1058,7 +1315,7 @@ sections.aim_methods:Dropdown({
         config.Aimbot.Part = Value
     end,
 }, "Dropdown")
-sections.aim_methods:Dropdown({
+components.Aimbot.Method = sections.aim_methods:Dropdown({
     Name = "Aim Method",
     Multi = false,
     Required = true,
@@ -1069,12 +1326,27 @@ sections.aim_methods:Dropdown({
     end,
 }, "Dropdown")
 
+local a_fov = {
+    "Screen",
+    "Mouse"
+}
+components.Aimbot.FOV.Mode = sections.aim_methods:Dropdown({
+    Name = "FOV",
+    Multi = false,
+    Required = true,
+    Options = a_fov,
+    Default = 1,
+    Callback = function(Value)
+        config.Aimbot.FOV.Mode = Value
+    end,
+}, "Dropdown")
+
 -- Visuals Section
 sections.vis_general:Header({
     Name = "🔎 | General"
 })
 sections.vis_general:Divider()
-sections.vis_general:Toggle({
+components.Visuals.Names.Enabled = sections.vis_general:Toggle({
     Name = "Show Names",
     Default = false,
     Callback = function(value)
@@ -1096,7 +1368,7 @@ sections.vis_config:Header({
 })
 sections.vis_config:Divider()
 local nameTypes = {"Username", "DisplayName"}
-sections.vis_config:Dropdown({
+components.Visuals.Names.Type = sections.vis_config:Dropdown({
     Name = "Name Type",
     Multi = false,
     Required = true,
@@ -1109,7 +1381,7 @@ sections.vis_config:Dropdown({
         end
     end,
 }, "Dropdown")
-sections.vis_config:Colorpicker({
+components.Visuals.Names.Color = sections.vis_config:Colorpicker({
     Name = "ESP Color",
     Default = Color3.fromRGB(255, 255, 255),
     Callback = function(color)
@@ -1120,7 +1392,7 @@ sections.vis_config:Colorpicker({
         end
     end,
 }, "Colorpicker")
-sections.vis_config:Slider({
+components.Visuals.Names.Size = sections.vis_config:Slider({
     Name = "Font Size",
     Default = 14,
     Minimum = 8,
@@ -1140,7 +1412,7 @@ sections.aim_checks:Header({
     Name = "🎯 | Aimbot Checks"
 })
 sections.aim_checks:Divider()
-sections.aim_checks:Toggle({
+components.Aimbot.Checks.Team = sections.aim_checks:Toggle({
     Name = "Team Check",
     Default = false,
     Callback = function(value)
@@ -1151,9 +1423,9 @@ sections.aim_checks:Toggle({
         })
     end
 }, "Toggle")
-sections.aim_checks:Toggle({
+components.Aimbot.Checks.Health = sections.aim_checks:Toggle({
     Name = "Health Check",
-    Default = true,
+    Default = false,
     Callback = function(value)
         config.Aimbot.Checks.Health = value
         Window:Notify({
@@ -1162,31 +1434,9 @@ sections.aim_checks:Toggle({
         })
     end
 }, "Toggle")
-sections.aim_checks:Toggle({
-    Name = "Knock Check",
-    Default = true,
-    Callback = function(value)
-        config.Aimbot.Checks.Knock = value
-        Window:Notify({
-            Title = Window.Settings.Title,
-            Description = (value and "Enabled " or "Disabled ") .. "Knock Check"
-        })
-    end
-}, "Toggle")
-sections.aim_checks:Toggle({
-    Name = "Invisible Check",
-    Default = true,
-    Callback = function(value)
-        config.Aimbot.Checks.Invisible = value
-        Window:Notify({
-            Title = Window.Settings.Title,
-            Description = (value and "Enabled " or "Disabled ") .. "Invisible Check"
-        })
-    end
-}, "Toggle")
-sections.aim_checks:Toggle({
+components.Aimbot.Checks.Wall = sections.aim_checks:Toggle({
     Name = "Wall Check",
-    Default = true,
+    Default = false,
     Callback = function(value)
         config.Aimbot.Checks.Wall = value
         Window:Notify({
@@ -1200,7 +1450,7 @@ sections.vis_checks:Header({
     Name = "🔎 | Visual Checks"
 })
 sections.vis_checks:Divider()
-sections.vis_checks:Toggle({
+components.Visuals.Checks.Team = sections.vis_checks:Toggle({
     Name = "Team Check",
     Default = false,
     Callback = function(value)
@@ -1211,36 +1461,14 @@ sections.vis_checks:Toggle({
         })
     end
 }, "Toggle")
-sections.vis_checks:Toggle({
+components.Visuals.Checks.Health = sections.vis_checks:Toggle({
     Name = "Health Check",
-    Default = true,
+    Default = false,
     Callback = function(value)
         config.Visuals.Checks.Health = value
         Window:Notify({
             Title = Window.Settings.Title,
             Description = (value and "Enabled " or "Disabled ") .. "Health Check"
-        })
-    end
-}, "Toggle")
-sections.vis_checks:Toggle({
-    Name = "Knock Check",
-    Default = true,
-    Callback = function(value)
-        config.Visuals.Checks.Knock = value
-        Window:Notify({
-            Title = Window.Settings.Title,
-            Description = (value and "Enabled " or "Disabled ") .. "Knock Check"
-        })
-    end
-}, "Toggle")
-sections.vis_checks:Toggle({
-    Name = "Invisible Check",
-    Default = true,
-    Callback = function(value)
-        config.Visuals.Checks.Invisible = value
-        Window:Notify({
-            Title = Window.Settings.Title,
-            Description = (value and "Enabled " or "Disabled ") .. "Invisible Check"
         })
     end
 }, "Toggle")
@@ -1250,7 +1478,7 @@ sections.plr_speed:Header({
     Name = "🦵 | Walkspeed"
 })
 sections.plr_speed:Divider()
-sections.plr_speed:Toggle({
+components.Player.Walkspeed.Enabled = sections.plr_speed:Toggle({
     Name = "Enable Walkspeed",
     Default = false,
     Callback = function(value)
@@ -1262,7 +1490,7 @@ sections.plr_speed:Toggle({
         })
     end
 }, "Toggle")
-sections.plr_speed:Toggle({
+components.Player.Walkspeed.Loop = sections.plr_speed:Toggle({
     Name = "Loop Walkspeed",
     Default = false,
     Callback = function(value)
@@ -1276,7 +1504,7 @@ sections.plr_speed:Toggle({
         })
     end
 }, "Toggle")
-sections.plr_speed:Slider({
+components.Player.Walkspeed.Value = sections.plr_speed:Slider({
     Name = "Speed",
     Default = 16,
     Minimum = 1,
@@ -1295,7 +1523,7 @@ sections.plr_strafe:Header({
     Name = "🏃 | Auto-Strafe"
 })
 sections.plr_strafe:Divider()
-sections.plr_strafe:Toggle({
+components.Player.AutoStrafe.Enabled = sections.plr_strafe:Toggle({
     Name = "Enable Auto-Strafe",
     Default = false,
     Callback = function(value)
@@ -1307,7 +1535,7 @@ sections.plr_strafe:Toggle({
         })
     end
 }, "Toggle")
-sections.plr_strafe:Slider({
+components.Player.AutoStrafe.Speed = sections.plr_strafe:Slider({
     Name = "Strafe Speed",
     Default = 50,
     Minimum = 10,
@@ -1319,7 +1547,7 @@ sections.plr_strafe:Slider({
     end
 }, "Slider")
 local strafeStyles = {"Smooth", "Sharp"}
-sections.plr_strafe:Dropdown({
+components.Player.AutoStrafe.Style = sections.plr_strafe:Dropdown({
     Name = "Strafe Style",
     Multi = false,
     Required = true,
@@ -1334,7 +1562,7 @@ sections.plr_jump:Header({
     Name = "🦘 | Jumping"
 })
 sections.plr_jump:Divider()
-sections.plr_jump:Toggle({
+components.Player.Jump.Enabled = sections.plr_jump:Toggle({
     Name = "Enable Jump Power",
     Default = false,
     Callback = function(value)
@@ -1346,7 +1574,7 @@ sections.plr_jump:Toggle({
         })
     end
 }, "Toggle")
-sections.plr_jump:Slider({
+components.Player.Jump.Power = sections.plr_jump:Slider({
     Name = "Jump Power",
     Default = 50,
     Minimum = 1,
@@ -1360,7 +1588,7 @@ sections.plr_jump:Slider({
         end
     end
 }, "Slider")
-sections.plr_jump:Toggle({
+components.Player.Jump.NoCooldown = sections.plr_jump:Toggle({
     Name = "Disable Jump Cooldowns",
     Default = false,
     Callback = function(value)
@@ -1382,15 +1610,15 @@ sections.prog_creds:Header({
 sections.prog_creds:Divider()
 sections.prog_creds:Paragraph({
     Header = "🔒 | Aimbot",
-    Body = "unconcerning"
+    Body = "unconcerning (Player)"
 })
 sections.prog_creds:Paragraph({
     Header = "🔎 | Visuals",
-    Body = "unconcerning"
+    Body = "unconcerning (Player)"
 })
 sections.prog_creds:Paragraph({
     Header = "🌺 | Player Settings",
-    Body = "unconcerning"
+    Body = "unconcerning (Player)"
 })
 sections.prog_creds:Divider()
 sections.prog_creds:Button({
@@ -1416,11 +1644,29 @@ sections.ui_creds:Paragraph({
     Header = "🚀 | UI Documentation",
     Body = "brady-xyz"
 })
+sections.ui_creds:Divider()
+sections.ui_creds:Button({
+    Name = "MacLib GitHub",
+    Callback = function()
+        setclipboard("https://github.com/biggaboy212/Maclib/tree/main")
+        Window:Notify({
+            Title = Window.Settings.Title,
+            Description = "Copied GitHub link."
+        })
+    end,
+})
+sections.ui_creds:Button({
+    Name = "MacLib Documentation",
+    Callback = function()
+        setclipboard("https://brady-xyz.gitbook.io/maclib-ui-library")
+        Window:Notify({
+            Title = Window.Settings.Title,
+            Description = "Copied documentation link."
+        })
+    end,
+})
 
 -- Config and cleanup
-MacLib:SetFolder("starlight")
-tabs.Settings:InsertConfigSection("Left")
-
 -- Character added event to apply movement changes
 LocalPlayer.CharacterAdded:Connect(function(character)
     if config.Player.Walkspeed.Enabled then
@@ -1458,8 +1704,11 @@ Window.onUnloaded(function()
     cleanupAutoStrafe()
     
     -- Remove watermark
-    if watermark then
-        watermark:Remove()
+    if watermark1 then
+        watermark1:Remove()
+    end
+    if watermark2 then
+        watermark2:Remove()
     end
     
     -- Remove FOV circle
@@ -1481,5 +1730,6 @@ Window.onUnloaded(function()
     print("Unloaded!")
 end)
 
+updateConfigDropdown()
 tabs.Aimbot:Select()
-MacLib:LoadAutoLoadConfig()
+MacLib:LoadAutoLoadConfig()MacLib:LoadAutoLoadConfig()
